@@ -2,6 +2,9 @@
 
 一个 AI 驱动的周末活动规划助手，根据你的需求自动生成完整的周末出行方案。
 
+<img width="1456" height="794" alt="截屏2026-05-22 01 07 32" src="https://github.com/user-attachments/assets/19635906-b5e9-4be8-9a2d-adc2f6011ed7" />
+
+
 ## 核心功能
 
 ### 1. 智能需求解析
