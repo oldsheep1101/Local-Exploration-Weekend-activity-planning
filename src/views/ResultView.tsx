@@ -37,10 +37,15 @@ const ResultView = ({ onBack }: ResultViewProps) => {
   const initMap = async () => {
     if (!mapContainer.current || !plan) return;
     try {
+      // 设置安全密钥（2021年12月后的 key 必须）
+      window._AMapSecurityConfig = {
+        securityJsCode: '5752376ae47f164382db363b556dccfb'
+      };
+
       const AMap = await AMapLoader.load({
         key: import.meta.env.VITE_AMAP_WEB_JS_KEY,
         version: '2.0',
-        plugins: ['AMap.Marker', 'AMap.Polyline']
+        plugins: ['AMap.Marker', 'AMap.Polyline', 'AMap.Geocoder']
       });
 
       mapInstance.current = new AMap.Map(mapContainer.current, {
@@ -48,17 +53,52 @@ const ResultView = ({ onBack }: ResultViewProps) => {
         center: [121.4737, 31.2304]
       });
 
-      plan.steps.forEach((step, index) => {
+      // 用地理编码器把地址转坐标
+      const geocoder = new AMap.Geocoder();
+      const markers: any[] = [];
+
+      // 逐个解析地址（用 Promise 包装回调）
+      const geocodeLocation = (address: string): Promise<[number, number]> => {
+        return new Promise((resolve) => {
+          geocoder.getLocation(address, (status: string, result: any) => {
+            if (status === 'complete' && result.geocodes?.length) {
+              const [lng, lat] = result.geocodes[0].location.toArray();
+              resolve([lng, lat]);
+            } else {
+              resolve([121.4737, 31.2304]); // fallback 到上海中心
+            }
+          });
+        });
+      };
+
+      const positions = await Promise.all(
+        plan.steps.map((step, index) => geocodeLocation(step.location || step.title))
+      );
+
+      positions.forEach(([lng, lat], index) => {
         const marker = new AMap.Marker({
-          position: [121.47 + index * 0.02, 31.23 + index * 0.01],
-          title: step.title,
+          position: [lng, lat],
+          title: plan.steps[index].title,
           label: {
-            content: `<div style="background:#667eea;color:white;padding:4px 8px;border-radius:4px;font-size:12px;white-space:nowrap;">${step.title}</div>`,
+            content: `<div style="background:#667eea;color:white;padding:4px 8px;border-radius:4px;font-size:12px;white-space:nowrap;">${plan.steps[index].title}</div>`,
             offset: new AMap.Pixel(0, -30)
           }
         });
         mapInstance.current.add(marker);
+        markers.push(marker);
       });
+
+      // 画路线
+      if (markers.length >= 2) {
+        const path = markers.map((m) => m.getPosition());
+        mapInstance.current.add(new AMap.Polyline({
+          path,
+          strokeColor: '#667eea',
+          strokeWeight: 3,
+          strokeOpacity: 0.7
+        }));
+        mapInstance.current.setFitView();
+      }
     } catch (error) {
       console.error('地图加载失败:', error);
     }

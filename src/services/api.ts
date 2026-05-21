@@ -1,5 +1,6 @@
 import axios from 'axios'
 import type { PlanRequest, PlanResponse } from '@/types'
+export * from './weather'
 
 const API_BASE_URL = 'http://localhost:8000'
 

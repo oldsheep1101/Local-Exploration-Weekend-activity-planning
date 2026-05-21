@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Clock, Users, Wallet, Sun, Cloud, Calendar, ArrowRight, Pencil, Check, Loader2 } from 'lucide-react';
+import { Clock, Users, Wallet, Calendar, ArrowRight, Pencil, Check, Loader2, CloudRain } from 'lucide-react';
 import { Button } from 'antd';
 import dayjs from 'dayjs';
-import { parseQuery } from '../services/api';
+import { parseQuery, getWeather } from '../services/api';
+import type { WeatherResult } from '../services/weather';
 
 interface ConfirmCardProps {
   query: string;
@@ -23,6 +24,9 @@ interface PlanParams {
     text: string;
     temp: number;
     icon: string;
+    tempMax: number;
+    tempMin: number;
+    precip: number;
   };
 }
 
@@ -37,16 +41,8 @@ const timeSlots = [
   '09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00'
 ];
 
-// 模拟7天天气预报
-const weatherForecast: Record<string, { text: string; temp: number; icon: string }> = {
-  '0': { text: '晴', temp: 26, icon: '☀️' },
-  '1': { text: '多云', temp: 24, icon: '⛅' },
-  '2': { text: '阴', temp: 22, icon: '☁️' },
-  '3': { text: '小雨', temp: 18, icon: '🌧️' },
-  '4': { text: '晴', temp: 28, icon: '☀️' },
-  '5': { text: '雷阵雨', temp: 25, icon: '⛈️' },
-  '6': { text: '晴', temp: 30, icon: '☀️' },
-};
+// 星期标签
+const weekDayLabels = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
 
 export default function ConfirmCard({ query, onConfirm, onCancel }: ConfirmCardProps) {
   const today = dayjs();
@@ -58,6 +54,7 @@ export default function ConfirmCard({ query, onConfirm, onCancel }: ConfirmCardP
   const [isEditing, setIsEditing] = useState<string | null>(null);
   const [isParsing, setIsParsing] = useState(false);
   const [hasParsed, setHasParsed] = useState(false);
+  const [weatherData, setWeatherData] = useState<WeatherResult | null>(null);
 
   // 用 LLM 解析 query 中的场景和人数
   useEffect(() => {
@@ -91,18 +88,38 @@ export default function ConfirmCard({ query, onConfirm, onCancel }: ConfirmCardP
       .finally(() => setIsParsing(false));
   }, [query]);
 
-  // 获取目标日期的天气
-  const getWeatherForDate = () => {
-    const daysDiff = dayjs(date).diff(today, 'day');
-    return weatherForecast[daysDiff.toString()] || weatherForecast['0'];
-  };
+  // 加载真实天气数据
+  useEffect(() => {
+    getWeather()
+      .then(setWeatherData)
+      .catch(console.error);
+  }, []);
 
-  const weather = getWeatherForDate();
+  // 获取目标日期的真实天气
+  const getWeatherForDate = useCallback(() => {
+    if (!weatherData?.forecasts || !date) return null;
+    const targetDate = dayjs(date).format('YYYY-MM-DD');
+    return weatherData.forecasts.find(f => f.date === targetDate) || null;
+  }, [weatherData, date]);
+
+  const targetWeather = getWeatherForDate();
+
+  // 获取天气图标
+  const getWeatherIcon = (text: string): string => {
+    if (text.includes('雨')) return '🌧️';
+    if (text.includes('雷')) return '⛈️';
+    if (text.includes('雪')) return '❄️';
+    if (text.includes('阴')) return '☁️';
+    if (text.includes('多云')) return '⛅';
+    return '☀️';
+  };
 
   // 判断天气适合室内还是室外
   const getWeatherAdvice = () => {
-    if (weather.text.includes('雨')) return '建议选择室内方案';
-    if (weather.temp > 30 || weather.temp < 10) return '气温极端，建议室内活动';
+    if (!targetWeather) return '等待获取天气数据...';
+    if (targetWeather.textDay.includes('雨')) return '今日有雨，建议室内方案';
+    if (targetWeather.tempMax > 33 || targetWeather.tempMin < 8) return '气温极端，建议室内活动';
+    if (targetWeather.precip > 50) return '降水概率较高，注意备伞';
     return '天气良好，适合户外活动';
   };
 
@@ -115,7 +132,14 @@ export default function ConfirmCard({ query, onConfirm, onCancel }: ConfirmCardP
       people,
       budget,
       scenario,
-      weather
+      weather: targetWeather ? {
+        text: targetWeather.textDay,
+        temp: Math.round((targetWeather.tempMax + targetWeather.tempMin) / 2),
+        icon: getWeatherIcon(targetWeather.textDay),
+        tempMax: targetWeather.tempMax,
+        tempMin: targetWeather.tempMin,
+        precip: targetWeather.precip
+      } : undefined
     });
   };
 
@@ -422,14 +446,30 @@ export default function ConfirmCard({ query, onConfirm, onCancel }: ConfirmCardP
                 transition={{ delay: 0.55 }}
                 className="flex items-center gap-3 p-3 bg-brand-yellow/10 rounded-xl"
               >
-                <div className="text-2xl">{weather.icon}</div>
+                <div className="text-2xl">
+                  {targetWeather ? getWeatherIcon(targetWeather.textDay) : targetWeather ? getWeatherIcon(targetWeather.textDay) : '🌤️'}
+                </div>
                 <div>
                   <div className="text-xs text-gray-400 font-bold uppercase">
                     {date ? dayjs(date).format('MM月DD日') : '待定'} 天气
                   </div>
-                  <div className="font-semibold text-gray-700">{date ? weather.text : '-'} {date ? `${weather.temp}°C` : ''}</div>
+                  {targetWeather ? (
+                    <div className="font-semibold text-gray-700">
+                      {targetWeather.textDay} {targetWeather.tempMin}~{targetWeather.tempMax}°C
+                    </div>
+                  ) : (
+                    <div className="font-semibold text-gray-700 text-xs">加载中...</div>
+                  )}
                 </div>
-                <div className="ml-auto text-xs text-gray-500">{date ? getWeatherAdvice() : '等待解析日期'}</div>
+                <div className="ml-auto text-xs text-gray-500 text-right leading-tight">
+                  <div>{getWeatherAdvice()}</div>
+                  {targetWeather && targetWeather.precip > 0 && (
+                    <div className="text-blue-500 flex items-center gap-1 mt-1">
+                      <CloudRain className="w-3 h-3" />
+                      降水{targetWeather.precip}%
+                    </div>
+                  )}
+                </div>
               </motion.div>
             </div>
 
