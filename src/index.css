@@ -1,0 +1,215 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Space Grotesk", sans-serif;
+
+  --color-brand-yellow: #FFDE00;
+  --color-brand-blue: #007BFF;
+  --color-brand-green: #00A65C;
+  --color-brand-orange: #FF6633;
+  --color-brand-light-orange: #FF944D;
+  --color-brand-dark: #121212;
+}
+
+@layer base {
+  body {
+    @apply bg-white text-brand-dark font-sans;
+  }
+}
+
+@layer components {
+  .skew-card {
+    @apply transition-transform duration-300 hover:scale-105;
+  }
+}
+
+/* PlanResult 页面样式 */
+.plan-result-container {
+  min-height: 100vh;
+  background: linear-gradient(135deg, #f5f7fa 0%, #e4e8f0 100%);
+  padding: 24px;
+}
+
+.plan-result-container .page-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 24px;
+  max-width: 1200px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.plan-result-container .page-header h1 {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 700;
+  color: #333;
+}
+
+.plan-result-container .content-wrapper {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.plan-result-container .overview-card {
+  margin-bottom: 24px;
+  border-radius: 16px;
+}
+
+.plan-result-container .summary-text {
+  margin-top: 16px;
+  font-size: 16px;
+  color: #666;
+  line-height: 1.8;
+}
+
+.plan-result-container .main-content {
+  display: grid;
+  grid-template-columns: 1fr 400px;
+  gap: 24px;
+}
+
+@media (max-width: 1024px) {
+  .plan-result-container .main-content {
+    grid-template-columns: 1fr;
+  }
+}
+
+.plan-result-container .left-section,
+.plan-result-container .right-section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.plan-result-container :deep(.ant-card) {
+  border-radius: 16px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+.plan-result-container .timeline-item {
+  background: #f8fafc;
+  padding: 16px;
+  border-radius: 12px;
+  margin-left: 8px;
+}
+
+.plan-result-container .timeline-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.plan-result-container .timeline-icon {
+  font-size: 16px;
+}
+
+.plan-result-container .timeline-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #333;
+  flex: 1;
+}
+
+.plan-result-container .timeline-desc {
+  font-size: 14px;
+  color: #666;
+  margin-bottom: 8px;
+}
+
+.plan-result-container .timeline-location {
+  font-size: 13px;
+  color: #999;
+  margin-bottom: 4px;
+}
+
+.plan-result-container .timeline-duration {
+  font-size: 12px;
+  color: #bbb;
+}
+
+.plan-result-container .suggestions-card {
+  background: linear-gradient(135deg, #fff9e6 0%, #fff5d6 100%);
+}
+
+.plan-result-container .suggestion-item {
+  padding: 8px 0;
+  color: #666;
+  font-size: 14px;
+  line-height: 1.6;
+  border-bottom: 1px solid #f0e6cc;
+}
+
+.plan-result-container .route-list {
+  padding: 16px;
+  background: #fafafa;
+  border-radius: 12px;
+}
+
+.plan-result-container .route-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.plan-result-container .route-marker {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 12px;
+  color: white;
+}
+
+.plan-result-container .route-item.start .route-marker {
+  background: linear-gradient(135deg, #52c41a, #73d13d);
+}
+
+.plan-result-container .route-item.end .route-marker {
+  background: linear-gradient(135deg, #1890ff, #69c0ff);
+}
+
+.plan-result-container .route-item .route-marker.step {
+  background: linear-gradient(135deg, #667eea, #764ba2);
+}
+
+.plan-result-container .route-info {
+  flex: 1;
+}
+
+.plan-result-container .route-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: #333;
+}
+
+.plan-result-container .route-time {
+  font-size: 12px;
+  color: #999;
+}
+
+.plan-result-container .route-line {
+  width: 2px;
+  height: 24px;
+  background: #e8e8e8;
+  margin-left: 15px;
+  margin-top: 8px;
+  margin-bottom: 8px;
+}
+
+.plan-result-container .map-card :deep(.ant-card-body) {
+  padding: 0;
+}
+
+.plan-result-container .tags-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}

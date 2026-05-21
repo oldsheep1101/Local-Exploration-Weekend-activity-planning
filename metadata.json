@@ -1,0 +1,6 @@
+{
+  "name": "WeekendPlanner",
+  "description": "周末闲时活动规划与执行系统，一键安排你的完美周末。提供本地短时活动建议、餐厅预订及下单执行功能。",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
