@@ -50,39 +50,41 @@ const weatherForecast: Record<string, { text: string; temp: number; icon: string
 
 export default function ConfirmCard({ query, onConfirm, onCancel }: ConfirmCardProps) {
   const today = dayjs();
-  const [date, setDate] = useState(today.add(1, 'day').format('YYYY-MM-DD'));
-  const [time, setTime] = useState('14:00');
-  const [people, setPeople] = useState(3);
-  const [budget, setBudget] = useState<string>('不限');
-  const [scenario, setScenario] = useState('family');
+  const [date, setDate] = useState('');
+  const [time, setTime] = useState('');
+  const [people, setPeople] = useState<number | null>(null);
+  const [budget, setBudget] = useState<string>('');
+  const [scenario, setScenario] = useState('');
   const [isEditing, setIsEditing] = useState<string | null>(null);
   const [isParsing, setIsParsing] = useState(false);
+  const [hasParsed, setHasParsed] = useState(false);
 
   // 用 LLM 解析 query 中的场景和人数
   useEffect(() => {
     if (!query) return;
 
     setIsParsing(true);
+    setHasParsed(false);
+    // 重置为空
+    setDate('');
+    setTime('');
+    setPeople(null);
+    setBudget('');
+    setScenario('');
+
     parseQuery(query, '上海')
       .then((res) => {
         if (res.success && res.data) {
           const data = res.data;
-          // 处理场景类型（新字段: scenario, 旧字段: scenario_type）
-          const scenarioVal = data.scenario || data.scenario_type;
-          if (scenarioVal) setScenario(scenarioVal);
-          // 处理人数（新字段: party_size, 旧字段: people）
-          const peopleVal = data.party_size || data.people;
-          if (peopleVal) {
-            const num = parseInt(peopleVal);
-            if (num > 0 && num <= 10) setPeople(num);
-          }
-          // 处理预算（新字段: budget_per_person, 旧字段: budget）
+          // 等所有字段都解析完再一起更新
+          setScenario(data.scenario || data.scenario_type || 'family');
+          setPeople(data.party_size || data.people ? parseInt(data.party_size || data.people) : 3);
+          // 预算：没有的话显示"不限"
           const budgetVal = data.budget_per_person || data.budget;
-          if (budgetVal && budgetVal !== '不限') setBudget(`¥${budgetVal}`);
-          // 处理日期
-          if (data.date) setDate(data.date);
-          // 处理出发时间
-          if (data.departure_time) setTime(data.departure_time);
+          setBudget(budgetVal && budgetVal !== '不限' && budgetVal !== 'null' ? `¥${budgetVal}` : '不限');
+          setDate(data.date || today.add(1, 'day').format('YYYY-MM-DD'));
+          setTime(data.departure_time || '14:00');
+          setHasParsed(true);
         }
       })
       .catch(console.error)
@@ -137,40 +139,60 @@ export default function ConfirmCard({ query, onConfirm, onCancel }: ConfirmCardP
         onClick={onCancel}
       >
         <motion.div
-          initial={{ y: -50, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          exit={{ y: -50, opacity: 0 }}
-          transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+          initial={{ y: -500, opacity: 0, clipPath: 'inset(0 0 100% 0)' }}
+          animate={{ y: 0, opacity: 1, clipPath: 'inset(0 0 0% 0)' }}
+          exit={{ y: -500, opacity: 0, clipPath: 'inset(0 0 100% 0)' }}
+          transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
           className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden"
           onClick={(e) => e.stopPropagation()}
         >
           {/* 小票头部 */}
-          <div className="bg-brand-yellow px-6 py-4">
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 }}
+            className="bg-brand-yellow px-6 py-4"
+          >
             <div className="text-center">
               <div className="text-xs font-bold tracking-widest text-black/60 uppercase">Travel Plan</div>
               <div className="font-display font-bold text-2xl text-black italic">行程确认单</div>
             </div>
-          </div>
+          </motion.div>
 
           {/* 小票内容 */}
           <div className="p-6 space-y-4">
             {/* 原始需求 */}
-            <div className="bg-gray-50 rounded-2xl p-4">
+            <motion.div
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: 0.2 }}
+              className="bg-gray-50 rounded-2xl p-4"
+            >
               <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">你的需求</div>
               <div className="text-gray-700 font-medium">{query}</div>
-            </div>
+            </motion.div>
 
             {/* 分隔线 */}
-            <div className="flex items-center gap-2">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.25 }}
+              className="flex items-center gap-2"
+            >
               <div className="flex-1 h-px bg-gray-200"></div>
               <div className="text-xs text-gray-400 font-bold">✂ ✂ ✂</div>
               <div className="flex-1 h-px bg-gray-200"></div>
-            </div>
+            </motion.div>
 
             {/* 可编辑字段 */}
             <div className="space-y-3">
               {/* 日期 */}
-              <div className="flex items-center justify-between">
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.3 }}
+                className="flex items-center justify-between"
+              >
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 bg-indigo-500/20 rounded-xl flex items-center justify-center">
                     <Calendar className="w-5 h-5 text-indigo-500" />
@@ -178,7 +200,13 @@ export default function ConfirmCard({ query, onConfirm, onCancel }: ConfirmCardP
                   <div>
                     <div className="text-xs text-gray-400 font-bold uppercase">出行日期</div>
                     <div className="font-semibold text-gray-700">
-                      {dayjs(date).format('MM月DD日')} {dateOptions.find(d => d.value === date)?.label}
+                      {date ? (
+                        <>
+                          {dayjs(date).format('MM月DD日')} {dateOptions.find(d => d.value === date)?.label}
+                        </>
+                      ) : (
+                        <span className="text-gray-300">等待解析...</span>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -188,7 +216,7 @@ export default function ConfirmCard({ query, onConfirm, onCancel }: ConfirmCardP
                 >
                   <Pencil className="w-4 h-4 text-gray-400" />
                 </button>
-              </div>
+              </motion.div>
               {isEditing === 'date' && (
                 <div className="flex flex-wrap gap-2 p-3 bg-gray-50 rounded-xl">
                   {dateOptions.map(d => (
@@ -209,14 +237,19 @@ export default function ConfirmCard({ query, onConfirm, onCancel }: ConfirmCardP
               )}
 
               {/* 时间 */}
-              <div className="flex items-center justify-between">
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.35 }}
+                className="flex items-center justify-between"
+              >
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 bg-brand-yellow/20 rounded-xl flex items-center justify-center">
                     <Clock className="w-5 h-5 text-brand-yellow" />
                   </div>
                   <div>
                     <div className="text-xs text-gray-400 font-bold uppercase">出发时间</div>
-                    <div className="font-semibold text-gray-700">{time}</div>
+                    <div className="font-semibold text-gray-700">{time || <span className="text-gray-300">等待解析...</span>}</div>
                   </div>
                 </div>
                 <button
@@ -225,9 +258,13 @@ export default function ConfirmCard({ query, onConfirm, onCancel }: ConfirmCardP
                 >
                   <Pencil className="w-4 h-4 text-gray-400" />
                 </button>
-              </div>
+              </motion.div>
               {isEditing === 'time' && (
-                <div className="flex flex-wrap gap-2 p-3 bg-gray-50 rounded-xl">
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  className="flex flex-wrap gap-2 p-3 bg-gray-50 rounded-xl"
+                >
                   {timeSlots.map(t => (
                     <button
                       key={t}
@@ -239,18 +276,25 @@ export default function ConfirmCard({ query, onConfirm, onCancel }: ConfirmCardP
                       {t}
                     </button>
                   ))}
-                </div>
+                </motion.div>
               )}
 
               {/* 人数 */}
-              <div className="flex items-center justify-between">
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.4 }}
+                className="flex items-center justify-between"
+              >
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 bg-brand-blue/20 rounded-xl flex items-center justify-center">
                     <Users className="w-5 h-5 text-brand-blue" />
                   </div>
                   <div>
                     <div className="text-xs text-gray-400 font-bold uppercase">出行人数</div>
-                    <div className="font-semibold text-gray-700">{people}人</div>
+                    <div className="font-semibold text-gray-700">
+                      {people !== null ? `${people}人` : <span className="text-gray-300">等待解析...</span>}
+                    </div>
                   </div>
                 </div>
                 <button
@@ -259,9 +303,13 @@ export default function ConfirmCard({ query, onConfirm, onCancel }: ConfirmCardP
                 >
                   <Pencil className="w-4 h-4 text-gray-400" />
                 </button>
-              </div>
+              </motion.div>
               {isEditing === 'people' && (
-                <div className="flex gap-2 p-3 bg-gray-50 rounded-xl">
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  className="flex gap-2 p-3 bg-gray-50 rounded-xl"
+                >
                   {[1, 2, 3, 4, 5, 6].map(n => (
                     <button
                       key={n}
@@ -273,18 +321,25 @@ export default function ConfirmCard({ query, onConfirm, onCancel }: ConfirmCardP
                       {n}
                     </button>
                   ))}
-                </div>
+                </motion.div>
               )}
 
               {/* 预算 */}
-              <div className="flex items-center justify-between">
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.45 }}
+                className="flex items-center justify-between"
+              >
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 bg-green-500/20 rounded-xl flex items-center justify-center">
                     <Wallet className="w-5 h-5 text-green-500" />
                   </div>
                   <div>
                     <div className="text-xs text-gray-400 font-bold uppercase">人均预算</div>
-                    <div className="font-semibold text-gray-700">{budget}</div>
+                    <div className="font-semibold text-gray-700">
+                      {budget || <span className="text-gray-300">等待解析...</span>}
+                    </div>
                   </div>
                 </div>
                 <button
@@ -293,9 +348,13 @@ export default function ConfirmCard({ query, onConfirm, onCancel }: ConfirmCardP
                 >
                   <Pencil className="w-4 h-4 text-gray-400" />
                 </button>
-              </div>
+              </motion.div>
               {isEditing === 'budget' && (
-                <div className="flex flex-wrap gap-2 p-3 bg-gray-50 rounded-xl">
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  className="flex flex-wrap gap-2 p-3 bg-gray-50 rounded-xl"
+                >
                   {['不限', '100', '150', '200', '300', '500'].map(b => (
                     <button
                       key={b}
@@ -307,11 +366,16 @@ export default function ConfirmCard({ query, onConfirm, onCancel }: ConfirmCardP
                       {b === '不限' ? '不限' : `¥${b}`}
                     </button>
                   ))}
-                </div>
+                </motion.div>
               )}
 
               {/* 场景 */}
-              <div className="flex items-center justify-between">
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.5 }}
+                className="flex items-center justify-between"
+              >
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 bg-purple-500/20 rounded-xl flex items-center justify-center">
                     <Users className="w-5 h-5 text-purple-500" />
@@ -319,7 +383,7 @@ export default function ConfirmCard({ query, onConfirm, onCancel }: ConfirmCardP
                   <div>
                     <div className="text-xs text-gray-400 font-bold uppercase">出行场景</div>
                     <div className="font-semibold text-gray-700 flex items-center gap-2">
-                      {scenarioOptions.find(s => s.value === scenario)?.label}
+                      {scenario ? scenarioOptions.find(s => s.value === scenario)?.label : <span className="text-gray-300">等待解析...</span>}
                       {isParsing && <Loader2 className="w-3 h-3 animate-spin text-gray-400" />}
                     </div>
                   </div>
@@ -330,9 +394,13 @@ export default function ConfirmCard({ query, onConfirm, onCancel }: ConfirmCardP
                 >
                   <Pencil className="w-4 h-4 text-gray-400" />
                 </button>
-              </div>
+              </motion.div>
               {isEditing === 'scenario' && (
-                <div className="flex flex-wrap gap-2 p-3 bg-gray-50 rounded-xl">
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  className="flex flex-wrap gap-2 p-3 bg-gray-50 rounded-xl"
+                >
                   {scenarioOptions.map(s => (
                     <button
                       key={s.value}
@@ -344,31 +412,46 @@ export default function ConfirmCard({ query, onConfirm, onCancel }: ConfirmCardP
                       {s.label}
                     </button>
                   ))}
-                </div>
+                </motion.div>
               )}
 
               {/* 天气预报 */}
-              <div className="flex items-center gap-3 p-3 bg-brand-yellow/10 rounded-xl">
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.55 }}
+                className="flex items-center gap-3 p-3 bg-brand-yellow/10 rounded-xl"
+              >
                 <div className="text-2xl">{weather.icon}</div>
                 <div>
                   <div className="text-xs text-gray-400 font-bold uppercase">
-                    {dayjs(date).format('MM月DD日')} 天气
+                    {date ? dayjs(date).format('MM月DD日') : '待定'} 天气
                   </div>
-                  <div className="font-semibold text-gray-700">{weather.text} {weather.temp}°C</div>
+                  <div className="font-semibold text-gray-700">{date ? weather.text : '-'} {date ? `${weather.temp}°C` : ''}</div>
                 </div>
-                <div className="ml-auto text-xs text-gray-500">{getWeatherAdvice()}</div>
-              </div>
+                <div className="ml-auto text-xs text-gray-500">{date ? getWeatherAdvice() : '等待解析日期'}</div>
+              </motion.div>
             </div>
 
             {/* 分隔线 */}
-            <div className="flex items-center gap-2">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.6 }}
+              className="flex items-center gap-2"
+            >
               <div className="flex-1 h-px bg-gray-200"></div>
               <div className="text-xs text-gray-400 font-bold">✂ ✂ ✂</div>
               <div className="flex-1 h-px bg-gray-200"></div>
-            </div>
+            </motion.div>
 
             {/* 底部按钮 */}
-            <div className="flex gap-3">
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.65 }}
+              className="flex gap-3"
+            >
               <button
                 onClick={onCancel}
                 className="flex-1 py-3 rounded-xl border border-gray-200 text-gray-600 font-bold hover:bg-gray-50 transition-colors"
@@ -382,11 +465,11 @@ export default function ConfirmCard({ query, onConfirm, onCancel }: ConfirmCardP
                 <span>确认出发</span>
                 <Check className="w-5 h-5" />
               </button>
-            </div>
-          </div>
+            </motion.div>
 
-          {/* 小票底部装饰 */}
-          <div className="h-2 bg-gradient-to-r from-brand-yellow via-brand-blue to-brand-green"></div>
+            {/* 小票底部装饰 */}
+            <div className="h-2 bg-gradient-to-r from-brand-yellow via-brand-blue to-brand-green"></div>
+          </div>
         </motion.div>
       </motion.div>
     </AnimatePresence>

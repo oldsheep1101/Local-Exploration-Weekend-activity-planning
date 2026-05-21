@@ -51,6 +51,46 @@ class LLMService:
         except requests.exceptions.RequestException as e:
             raise Exception(f"LLM API 调用失败: {str(e)}")
 
+    def _convert_chinese_number(self, value):
+        """转换中文数字到阿拉伯数字"""
+        if value is None or value == "":
+            return value
+        if isinstance(value, (int, float)):
+            return value
+        if isinstance(value, str):
+            # 中文数字映射
+            cn_map = {'零': 0, '一': 1, '二': 2, '三': 3, '四': 4, '五': 5, '六': 6, '七': 7, '八': 8, '九': 9, '十': 10}
+            try:
+                # 如果已经是阿拉伯数字，直接返回
+                return int(value)
+            except ValueError:
+                # 处理中文数字
+                result = 0
+                temp = 0
+                unit = 1
+                for char in reversed(value):
+                    if char in cn_map:
+                        temp += cn_map[char] * unit
+                    elif char == '十':
+                        unit = 10
+                        result += temp
+                        temp = 0
+                    elif char == '百':
+                        unit = 100
+                        result += temp
+                        temp = 0
+                    elif char == '千':
+                        unit = 1000
+                        result += temp
+                        temp = 0
+                    elif char == '万':
+                        unit = 10000
+                        result += temp * unit
+                        temp = 0
+                result += temp
+                return result if result > 0 else value
+        return value
+
     def generate_plan(self, prompt: str) -> Dict[str, Any]:
         messages = [
             {"role": "system", "content": """你是一个周末活动规划助手。用户描述需求后，生成一个 JSON 格式的规划方案。
@@ -155,7 +195,8 @@ class LLMService:
         
         response = self.chat(messages, temperature=0.1, max_tokens=500)
         content = response.get("choices", [{}])[0].get("message", {}).get("content", "")
-        
+        print(f"🔍 LLM 原始返回: {content}")
+
         try:
             # 清理可能的 markdown 代码块
             if "```json" in content:
@@ -164,7 +205,23 @@ class LLMService:
                 content = content.split("```")[1].split("```")[0]
             
             result = json.loads(content.strip())
-            
+
+            # 清洗 budget_per_person：如果返回的是字符串（如"五十"、"50元"）则提取数字
+            if "budget_per_person" in result and result["budget_per_person"] is not None:
+                bp = result["budget_per_person"]
+                if isinstance(bp, str):
+                    import re
+                    match = re.search(r'\d+', bp)
+                    if match:
+                        result["budget_per_person"] = int(match.group())
+                    else:
+                        # 纯中文数字映射
+                        cn_num = {"零": 0, "一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9, "十": 10, "百": 100}
+                        if bp in cn_num:
+                            result["budget_per_person"] = cn_num[bp]
+                        else:
+                            result["budget_per_person"] = None
+
             # 确保必填字段有默认值
             now = datetime.now()
             default_departure = now + timedelta(hours=1)
@@ -186,7 +243,11 @@ class LLMService:
             for key, default_value in defaults.items():
                 if key not in result or result[key] is None or result[key] == "":
                     result[key] = default_value
-            
+
+            # 转换中文数字
+            result["party_size"] = self._convert_chinese_number(result.get("party_size"))
+            result["budget_per_person"] = self._convert_chinese_number(result.get("budget_per_person"))
+
             return result
             
         except json.JSONDecodeError:

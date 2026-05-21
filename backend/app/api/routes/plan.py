@@ -22,22 +22,34 @@ async def parse_query(request: dict):
     try:
         query = request.get("query", "")
         city = request.get("city", "上海")
-        agent = get_agent()
-        parsed = agent.parse_scenario(query, city)
+        
+        # 直接调 LLMService，不走 agent 中间层
+        from ...services.llm_service import get_llm
+        llm = get_llm()
+        parsed = llm.parse_query(query, city)
+        
         return {
             "success": True,
             "data": {
-                "date": parsed.date if hasattr(parsed, 'date') else "",
-                "departure_time": parsed.departure_time if hasattr(parsed, 'departure_time') else "",
-                "scenario": parsed.scenario_type,
-                "party_size": parsed.participants[0] if parsed.participants else "3",
-                "budget_per_person": parsed.budget or None,
-                "constraints": parsed.constraints or []
+                "date": parsed.get("date", ""),
+                "departure_time": parsed.get("departure_time", ""),
+                "scenario": parsed.get("scenario", "casual"),
+                "party_size": parsed.get("party_size", 1),
+                "budget_per_person": parsed.get("budget_per_person"),
+                "constraints": parsed.get("constraints", [])
             }
         }
     except Exception as e:
-        return {"success": True, "data": {"date": "", "departure_time": "", "scenario": "family", "party_size": "3", "budget_per_person": None, "constraints": []}}
-
+        return {
+            "success": False,
+            "message": str(e),
+            "data": {
+                "date": "", "departure_time": "",
+                "scenario": "casual", "party_size": 1,
+                "budget_per_person": None, "constraints": []
+            }
+        }
+        
 @router.post("/execute", response_model=ExecuteResponse)
 async def execute_plan(request: ExecuteRequest):
     """执行规划方案"""
