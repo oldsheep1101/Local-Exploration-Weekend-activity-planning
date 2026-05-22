@@ -11,13 +11,15 @@ class PlanRequest(BaseModel):
     query: str = Field(..., description="用户自然语言查询", example="今天下午是空的，想和老婆孩子出去玩几个小时，孩子5岁，老婆最近在减肥")
     city: str = Field(default="上海", description="城市", example="上海")
     user_location: Optional[str] = Field(default=None, description="用户位置", example="上海市浦东新区")
+    weather: Optional[Dict[str, Any]] = Field(default=None, description="目标日期天气信息")
 
     class Config:
         json_schema_extra = {
             "example": {
                 "query": "今天下午是空的，想和老婆孩子出去玩几个小时，孩子5岁，老婆最近在减肥",
                 "city": "上海",
-                "user_location": "上海市浦东新区"
+                "user_location": "上海市浦东新区",
+                "weather": {"text": "多云", "temp": 26, "tempMax": 28, "tempMin": 21, "precip": 20, "date": "2026-05-23"}
             }
         }
 
@@ -78,6 +80,7 @@ class PlanStep(BaseModel):
     location: Optional[str] = Field(default=None, description="地点")
     booking_status: str = Field(default="pending", description="预订状态: pending/confirmed/failed")
     booking_info: Optional[Dict[str, Any]] = Field(default=None, description="预订信息")
+    risk_note: Optional[str] = Field(default=None, description="风险提示，如'带伞'、'避开暴晒'")
 
 
 # ============ 完整方案 ============
@@ -99,6 +102,15 @@ class PlanResponse(BaseModel):
     success: bool = Field(..., description="是否成功")
     message: str = Field(default="", description="消息")
     data: Optional[WeekendPlan] = Field(default=None, description="规划数据")
+
+
+class DualPlanResponse(BaseModel):
+    """双方案响应（室内版 + 室外版）"""
+    success: bool = Field(..., description="是否成功")
+    message: str = Field(default="", description="消息")
+    indoor: Optional[WeekendPlan] = Field(default=None, description="室内版方案")
+    outdoor: Optional[WeekendPlan] = Field(default=None, description="室外版方案（极端天气时为 null）")
+    weather_alert: Optional[str] = Field(default=None, description="天气风险提示")
 
 
 class ExecuteResponse(BaseModel):

@@ -115,14 +115,9 @@ class LLMService:
         if not current_time:
             now = datetime.now()
             current_time = now.strftime("%Y-%m-%d %H:%M")
-            # 默认出发时间：当前时间 + 1小时，取整到最近半小时
-            default_departure = now + timedelta(hours=1)
-            default_departure = default_departure.replace(
-                minute=(default_departure.minute // 30) * 30,
-                second=0,
-                microsecond=0
-            )
-            default_time_str = default_departure.strftime("%H:%M")
+            # 默认出发时间：如果用户没说具体时间，"今天"用现在+1小时取整，"明天及以后"默认14:00
+            # 判断逻辑由 LLM 解析 date 字段后决定，这里先存基准值
+            default_time_str = "14:00"  # 默认值，LLM 解析 date 时会参考当前时间决定是否用这个
         else:
             default_time_str = "14:00"
         
@@ -138,15 +133,13 @@ class LLMService:
    - 格式：YYYY-MM-DD
 
 2. **出发时间** (departure_time)
-   - 默认值："{default_time_str}"（当前时间+1小时取整）
-   - 模糊时间映射：
-     - 上午 = 09:00
-     - 中午 = 12:00
-     - 下午 = 14:00
-     - 傍晚 = 17:00
-     - 晚上 = 19:00
-   - 明确时间（"3点""三点半""15:00"）→ 用用户的时间
-   - "现在就走""马上出发"→ 用当前时间
+   - 默认值："{default_time_str}"（只有明天及以后才用这个；今天的默认是现在+1小时取整）
+   - 规则：
+     - 用户说"今天"+没给具体时间 → 看当前时间（{current_time[:10]}），当前时间+1小时，取整到半点（如现在15:20则默认16:00）
+     - 用户说"明天""后天""周六"或任何具体未来日期+没给时间 → 默认 14:00
+     - 用户说"上午" → 09:00，"下午" → 14:00，"傍晚" → 17:00，"晚上" → 19:00
+     - 明确说了时间（"3点""三点半""15:00"）→ 直接用用户的时间
+     - "现在就走""马上出发"→ 当前时间+1小时取整
 
 3. **出行人数** (party_size)
    - 默认值：1

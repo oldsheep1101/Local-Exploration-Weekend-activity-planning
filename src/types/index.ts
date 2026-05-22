@@ -16,6 +16,7 @@ export interface PlanStep {
   location: string | null
   booking_status: string
   booking_info: Record<string, any> | null
+  risk_note?: string
 }
 
 export interface WeekendPlan {
@@ -29,14 +30,30 @@ export interface WeekendPlan {
   send_to: string | null
 }
 
+export interface DualPlan {
+  indoor: WeekendPlan | null
+  outdoor: WeekendPlan | null
+  weather_alert: string | null
+}
+
 export interface PlanResponse {
   success: boolean
   message: string
-  data: WeekendPlan
+  indoor: WeekendPlan | null
+  outdoor: WeekendPlan | null
+  weather_alert: string | null
 }
 
 export interface PlanRequest {
   query: string
   city: string
   user_location?: string
+  weather?: {
+    text: string
+    temp: number
+    tempMax: number
+    tempMin: number
+    precip: number
+    date: string
+  }
 }

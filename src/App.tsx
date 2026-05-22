@@ -516,9 +516,13 @@ export default function App() {
     setIsPlanning(true);
     try {
       const fullQuery = `${params.query}。日期：${params.date}，时间：${params.time}，人数：${params.people}人，场景：${params.scenario}，预算：${params.budget}，天气：${params.weather?.text}${params.weather?.temp}度`;
-      const response = await generatePlan({ query: fullQuery, city: params.city || '上海' });
-      if (response.success && response.data) {
-        sessionStorage.setItem('weekendPlan', JSON.stringify(response.data));
+      const response = await generatePlan({
+        query: fullQuery,
+        city: params.city || '上海',
+        weather: params.weather
+      });
+      if (response.success && (response.indoor || response.outdoor)) {
+        sessionStorage.setItem('weekendPlan', JSON.stringify(response));
         setCurrentView('result');
       }
     } catch (error: any) {
