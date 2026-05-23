@@ -3,6 +3,7 @@
 import uuid
 from typing import Dict, Any, Optional, Tuple
 from ..services.llm_service import get_llm
+from ..services.poi_service import search_pois_for_scenario, format_pois_for_prompt
 from ..models.schemas import PlanRequest, WeekendPlan, ScenarioContext, PlanStep
 
 # 天气条件分类
@@ -88,7 +89,7 @@ class PlannerAgent:
         }
         return alerts.get(condition)
 
-    def _build_base_prompt(self, request: PlanRequest, scenario: ScenarioContext, plan_type: str) -> str:
+    def _build_base_prompt(self, request: PlanRequest, scenario: ScenarioContext, plan_type: str, poi_context: str = "") -> str:
         """构建基础 prompt"""
         weather = request.weather or {}
         weather_info = f"\n目标日期天气：{weather.get('text', '未知')}，气温{weather.get('tempMin', 0)}~{weather.get('tempMax', 0)}°C，降水概率{weather.get('precip', 0)}%"
@@ -99,6 +100,7 @@ class PlannerAgent:
 场景类型：{scenario.scenario_type}
 约束条件：{', '.join(scenario.constraints) if scenario.constraints else '无'}
 时长：{scenario.duration_hours}小时{weather_info}
+{poi_context}
 
 请从{scenario.departure_time or '14:00'}开始规划，生成一个{'室内' if plan_type == 'indoor' else '室外'}版规划方案，{'室内版要求：所有活动必须在室内场所，包括餐厅、商场、博物馆、游乐场等，禁止任何户外活动' if plan_type == 'indoor' else '室外版要求：以户外活动为主，如公园、景区、户外游乐等，可以有少量室内用餐休息'}
 
@@ -144,7 +146,12 @@ class PlannerAgent:
 
     def _generate_single_plan(self, request: PlanRequest, scenario: ScenarioContext, plan_type: str) -> WeekendPlan:
         """生成单个方案（室内或室外）"""
-        prompt = self._build_base_prompt(request, scenario, plan_type)
+        # 先搜索真实 POI
+        poi_results = search_pois_for_scenario(scenario, city=request.city)
+        poi_context = format_pois_for_prompt(poi_results)
+        print(f"[POI搜索] 获取到 {len(poi_results)} 组 POI 结果")
+
+        prompt = self._build_base_prompt(request, scenario, plan_type, poi_context)
         plan_id = str(uuid.uuid4())[:8]
 
         try:
