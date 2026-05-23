@@ -4,6 +4,8 @@ import os
 import uuid
 import requests
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
+from ...services.pdf_service import _generate_pdf_async
 from ...models.schemas import PlanRequest, DualPlanResponse, ExecuteRequest, ExecuteResponse, ScenarioContext, PlanStep, WeekendPlan
 from ...agents.planner_agent import get_agent
 
@@ -289,3 +291,21 @@ async def get_transit_time(request: dict):
 async def execute_plan(request: ExecuteRequest):
     """执行规划方案"""
     return ExecuteResponse(success=True, message="执行成功", confirmed_steps=[], failed_steps=[])
+
+@router.post("/export-pdf")
+async def export_pdf(request: dict):
+    """导出方案 PDF"""
+    try:
+        plan = request.get("plan", {})
+        if not plan:
+            return {"success": False, "message": "plan 数据为空"}
+        pdf_bytes = await _generate_pdf_async(plan)
+        return StreamingResponse(
+            iter([pdf_bytes]),
+            media_type="application/pdf",
+            headers={"Content-Disposition": f"attachment; filename=weekend-plan-{plan.get('plan_id', 'draft')[:6]}.pdf"}
+        )
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {"success": False, "message": str(e)}
