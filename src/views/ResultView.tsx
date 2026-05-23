@@ -23,6 +23,7 @@ export default function ResultView({ onBack }: ResultViewProps) {
   const mapInstance = useRef<any>(null);
   const mapInitializedRef = useRef<Set<string>>(new Set());
   const amapRef = useRef<any>(null);
+  const geocoderRef = useRef<any>(null);
 
   useEffect(() => {
     const raw = sessionStorage.getItem('weekendPlan');
@@ -123,11 +124,13 @@ export default function ResultView({ onBack }: ResultViewProps) {
       // 画线和标记
       const hexColor = activeTab === 'indoor' ? '#3b82f6' : '#fcd34d';
       const activityPositions: [number, number][] = [];
+      let actCount = 0;
 
-      allSteps.forEach((step: EnrichedStep, index: number) => {
+      allSteps.forEach((step: EnrichedStep) => {
         if (!step.coord) return;
         if (step.type !== 'transport') {
           activityPositions.push(step.coord);
+          actCount++;
         }
 
         const isTransit = step.type === 'transport';
@@ -137,7 +140,7 @@ export default function ResultView({ onBack }: ResultViewProps) {
           content: `<div style="background:${
             isTransit ? '#6b7280' : hexColor
           };color:${activeTab === 'indoor' || isTransit ? 'white' : 'black'};width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:bold;box-shadow:0 4px 6px -1px rgb(0 0 0 / 0.1);border:2px solid white;font-size:11px;">${
-            isTransit ? '🚗' : index + 1
+            isTransit ? '🚗' : actCount
           }</div>`,
           offset: new AMap.Pixel(-14, -14)
         });
