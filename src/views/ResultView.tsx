@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
-import { ArrowRight, MapPin, Clock, AlertTriangle, Lightbulb, Map as MapIcon, Coffee, Sun, CloudRain } from 'lucide-react';
+import { ArrowRight, MapPin, Clock, AlertTriangle, Lightbulb, Map as MapIcon, Coffee, Sun, CloudRain, Share2, Download } from 'lucide-react';
 import AMapLoader from '@amap/amap-jsapi-loader';
 import { motion } from 'motion/react';
+import { jsPDF } from 'jspdf';
 import type { WeekendPlan, PlanStep } from '../types';
 import { getTransitTime } from '../services/transit';
 
@@ -338,6 +339,130 @@ export default function ResultView({ onBack }: ResultViewProps) {
     return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
   }
 
+  function generatePDF(plan: WeekendPlan, tab: 'indoor' | 'outdoor') {
+    const doc = new jsPDF();
+    const accentColor = tab === 'indoor' ? '#3B82F6' : '#FCD34D';
+    let y = 20;
+
+    // 标题
+    doc.setFontSize(22);
+    doc.setTextColor(30, 30, 30);
+    doc.text('周末活动规划', 20, y);
+    y += 12;
+
+    // 方案描述
+    doc.setFontSize(11);
+    doc.setTextColor(100, 100, 100);
+    doc.text(plan.summary, 20, y);
+    y += 10;
+
+    // 天气/场景信息
+    if (plan.scenario) {
+      doc.setFontSize(9);
+      doc.setTextColor(150, 150, 150);
+      const scenarioText = `${plan.scenario.scenario_type === 'family' ? '👨‍👩‍👧 家庭' : plan.scenario.scenario_type === 'friends' ? '👫 朋友' : '💑 约会'} · ${plan.total_duration_hours}小时`;
+      doc.text(scenarioText, 20, y);
+      y += 10;
+    }
+
+    // 分隔线
+    doc.setDrawColor(230, 230, 230);
+    doc.line(20, y, 190, y);
+    y += 10;
+
+    // 时间轴
+    plan.steps.forEach((step, index) => {
+      if (y > 270) {
+        doc.addPage();
+        y = 20;
+      }
+
+      // 步骤编号圆点
+      if (step.type !== 'transport') {
+        doc.setFillColor(...(tab === 'indoor' ? [59, 130, 246] : [252, 211, 77]));
+        doc.circle(24, y - 3, 4, 'F');
+        doc.setTextColor(255, 255, 255);
+        doc.setFontSize(8);
+        doc.text(String(index + 1), 22.5, y - 1.5);
+      } else {
+        doc.setFillColor(200, 200, 200);
+        doc.circle(24, y - 3, 3, 'F');
+      }
+
+      // 时间
+      doc.setTextColor(30, 30, 30);
+      doc.setFontSize(11);
+      doc.text(step.time_range, 32, y - 1);
+
+      // 时长
+      doc.setTextColor(150, 150, 150);
+      doc.setFontSize(8);
+      doc.text(`${step.duration_minutes}分钟`, 32 + 35, y - 1);
+
+      y += 7;
+
+      // 标题
+      doc.setTextColor(30, 30, 30);
+      doc.setFontSize(12);
+      doc.text(step.title, 32, y - 1);
+
+      // 类型标签
+      if (step.type === 'transport') {
+        doc.setTextColor(120, 120, 120);
+        doc.setFontSize(8);
+        doc.text('[ 通勤 ]', 32 + 80, y - 1);
+      }
+
+      y += 6;
+
+      // 描述
+      if (step.description) {
+        doc.setTextColor(80, 80, 80);
+        doc.setFontSize(9);
+        const lines = doc.splitTextToSize(step.description, 140);
+        doc.text(lines, 32, y - 1);
+        y += lines.length * 5;
+      }
+
+      // 地点
+      if (step.location) {
+        doc.setTextColor(150, 150, 150);
+        doc.setFontSize(8);
+        doc.text(`📍 ${step.location}`, 32, y - 1);
+        y += 6;
+      }
+
+      y += 6;
+    });
+
+    // 建议
+    if (plan.suggestions?.length) {
+      if (y > 250) { doc.addPage(); y = 20; }
+      doc.setDrawColor(230, 230, 230);
+      doc.line(20, y, 190, y);
+      y += 8;
+      doc.setTextColor(30, 30, 30);
+      doc.setFontSize(10);
+      doc.text('💡 建议', 20, y);
+      y += 6;
+      doc.setTextColor(100, 100, 100);
+      doc.setFontSize(9);
+      plan.suggestions.forEach((s) => {
+        const lines = doc.splitTextToSize(`• ${s}`, 150);
+        doc.text(lines, 20, y);
+        y += lines.length * 5;
+      });
+    }
+
+    // 底部
+    y = 285;
+    doc.setTextColor(200, 200, 200);
+    doc.setFontSize(7);
+    doc.text('由周末闲时规划生成', 20, y);
+
+    doc.save(`周末计划_${plan.plan_id?.slice(0, 6) || 'draft'}.pdf`);
+  }
+
   const getStepIcon = (type: string) => {
     switch (type) {
       case 'activity': return <MapIcon className="w-5 h-5" />;
@@ -423,7 +548,16 @@ export default function ResultView({ onBack }: ResultViewProps) {
             </button>
           </div>
 
-          <div className="w-24 hidden md:block"></div>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => generatePDF(currentPlan!, activeTab)}
+              className="flex items-center gap-2 px-4 py-2 bg-white/20 hover:bg-white/30 backdrop-blur-md rounded-xl border border-white/20 shadow-md text-sm font-bold transition-all cursor-pointer"
+              style={{ color: activeTab === 'indoor' ? '#ffffff' : '#121212' }}
+            >
+              <Share2 className="w-4 h-4" />
+              <span className="hidden md:inline">分享PDF</span>
+            </button>
+          </div>
         </header>
 
         <main className="flex-1 overflow-y-auto px-6 md:px-12 pb-12 w-full max-w-7xl mx-auto space-y-8 min-h-0">
