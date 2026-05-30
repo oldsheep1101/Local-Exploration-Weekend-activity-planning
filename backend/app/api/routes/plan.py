@@ -8,13 +8,52 @@ from fastapi.responses import StreamingResponse
 from ...services.pdf_service import _generate_pdf_async
 from ...models.schemas import PlanRequest, DualPlanResponse, ExecuteRequest, ExecuteResponse, ScenarioContext, PlanStep, WeekendPlan
 from ...agents.planner_agent import get_agent
+from ...agents.validator_agent import get_validator
+from ...services.user_db import get_user
 
 router = APIRouter(prefix="/api", tags=["规划"])
 
 AMAP_WEB_KEY = os.getenv("AMAP_WEB_KEY") or "6c299eb00d2b8672419fe520276ec10e"
 
+
+# ============================================================================
+# 用户偏好 & 硬约束（从数据库读取）
+# ============================================================================
+
+# 默认用户偏好（数据库未找到时 fallback）
+DEFAULT_PREFERENCES = {
+    "aesthetic": 0.5, "social": 0.5, "spicy": 0.5, "light_diet": 0.5,
+    "family_friendly": 0.5, "indoor": 0.5, "outdoor": 0.5, "popular": 0.5,
+    "quiet": 0.5, "trendy": 0.5, "romantic": 0.5, "active": 0.5, "budget_friendly": 0.5
+}
+
+DEFAULT_CONSTRAINTS = {"cannot_eat_spicy": False, "need_quiet": False, "need_indoor": False}
+
+
+def _parse_mentions(query: str) -> list[str]:
+    """从 '@alice @bob 下午出行' 中解析出被 @ 的人"""
+    import re
+    mentions = re.findall(r'@(\w+)', query)
+    return mentions if mentions else ["default"]
+
+
+def _get_user_configs(mentions: list[str]) -> tuple[list, list]:
+    """从数据库读取用户偏好和约束列表"""
+    prefs = []
+    constraints = []
+    for m in mentions:
+        user = get_user(m)
+        if user:
+            prefs.append(user["preferences"])
+            constraints.append(user["constraints"])
+        else:
+            prefs.append(DEFAULT_PREFERENCES)
+            constraints.append(DEFAULT_CONSTRAINTS)
+    return prefs, constraints
+
+
 def geocode_address(address: str, city: str = "上海市") -> tuple[float, float]:
-    """调用高德地理编码 API，将地址转为坐标 (lon, lat)"""
+    """地理编码：地址 → 坐标"""
     import re
     clean = re.sub(r'[（）\(\)→→【】\[\]「」''""''，,、。.！!？?\s+]', '', address)
     url = "https://restapi.amap.com/v3/geocode/geo"
@@ -27,42 +66,28 @@ def geocode_address(address: str, city: str = "上海市") -> tuple[float, float
         if data.get("status") == "1" and data.get("geocodes"):
             loc = data["geocodes"][0]["location"].split(",")
             lon, lat = float(loc[0]), float(loc[1])
-            # 校验坐标是否在上海范围内
             if LON_MIN <= lon <= LON_MAX and LAT_MIN <= lat <= LAT_MAX:
                 return lon, lat
-            print(f"[地理编码] 坐标异常({lon},{lat})，使用默认坐标")
-        # 如果清理后搜不到，试原地址
-        params["address"] = address
-        r = requests.get(url, params=params, timeout=10)
-        data = r.json()
-        if data.get("status") == "1" and data.get("geocodes"):
-            loc = data["geocodes"][0]["location"].split(",")
-            lon, lat = float(loc[0]), float(loc[1])
-            if LON_MIN <= lon <= LON_MAX and LAT_MIN <= lat <= LAT_MAX:
-                return lon, lat
-            print(f"[地理编码] 坐标异常({lon},{lat})，使用默认坐标")
     except Exception as e:
         print(f"[地理编码] 失败 {address}: {e}")
     return 121.4737, 31.2304  # 默认上海人民广场
 
 
 def calculate_transit_for_plan(plan: WeekendPlan, is_family: bool = False) -> WeekendPlan:
-    """对单个方案计算通勤时间，插入交通步骤"""
-    # 提取所有非 transport 步骤的地址
+    """通勤计算：插入交通步骤"""
     activity_steps = [s for s in plan.steps if s.type != "transport"]
     if len(activity_steps) < 2:
         return plan
 
-    # 1. 地理编码：地址 → 坐标
+    # 地理编码
     coords = []
     for step in activity_steps:
         addr = step.location or step.title
         addr = addr if "上海" in addr else f"上海市{addr}"
         lon, lat = geocode_address(addr)
         coords.append((lon, lat))
-    print(f"[通勤计算] 坐标: {coords}")
 
-    # 2. 相邻坐标之间调高德公交 API
+    # 查通勤
     transit_data = []
     for i in range(len(coords) - 1):
         origin = f"{coords[i][0]},{coords[i][1]}"
@@ -74,11 +99,8 @@ def calculate_transit_for_plan(plan: WeekendPlan, is_family: bool = False) -> We
             data = r.json()
             transits = data.get("route", {}).get("transits", [])
             if data.get("status") == "1" and transits:
-                duration = int(transits[0]["duration"])  # 秒
-                if duration > 7200:
-                    duration = min(duration, 7200)
+                duration = int(transits[0]["duration"])
                 distance = transits[0].get("distance", 0)
-                # 提取公交/地铁线路 + 上下车站
                 line_info = ""
                 booking_info = {}
                 segs = transits[0].get("segments", [])
@@ -104,30 +126,23 @@ def calculate_transit_for_plan(plan: WeekendPlan, is_family: bool = False) -> We
                     line_info = f"，{'→'.join(unique_lines[:3])}"
                     booking_info = {"lines": unique_lines}
                 transit_data.append({"duration": duration, "distance": distance, "line_info": line_info, "booking_info": booking_info, "is_walking": False})
-                print(f"[通勤计算] {origin} → {destination}: {duration}秒, {distance}米{line_info}")
             elif data.get("status") == "1" and data["route"].get("distance"):
-                # transits 为空但有直线距离
                 dist = int(data["route"]["distance"])
                 if dist < 2000:
-                    # 短距离(<2km)按5km/h步行，上限20分钟
                     duration = min(int((dist / 5.0) * 3600), 1200)
                 elif dist > 5000:
-                    # 长距离(>5km)认为 geocode 失败，用15分钟默认
                     transit_data.append({"duration": 900, "distance": 0})
-                    print(f"[通勤计算] {origin} → {destination}: 距离{dist}米>5km，跳过")
                     continue
                 else:
-                    # 中距离 2-5km，用3km/h步行，上限1小时
                     duration = min(int((dist / 3.0) * 3600), 3600)
                 transit_data.append({"duration": duration, "distance": dist, "is_walking": True})
-                print(f"[通勤计算] {origin} → {destination}: {duration//60}分钟(fallback walking), {dist}米")
             else:
-                transit_data.append({"duration": 900, "distance": 0})  # 15分钟 fallback
+                transit_data.append({"duration": 900, "distance": 0})
         except Exception as e:
-            print(f"[通勤计算] API 调用失败: {e}")
+            print(f"[通勤计算] API 失败: {e}")
             transit_data.append({"duration": 900, "distance": 0})
 
-    # 3. 构建新步骤列表（活动 + 交通交替）
+    # 构建步骤列表（活动 + 交通交替）
     new_steps = []
     current_minutes = 0
     first_time = activity_steps[0].time_range.split("-")[0] if activity_steps[0].time_range else "14:00"
@@ -135,7 +150,6 @@ def calculate_transit_for_plan(plan: WeekendPlan, is_family: bool = False) -> We
     current_minutes = h * 60 + m
 
     for idx, step in enumerate(activity_steps):
-        # 活动时间
         activity_start = current_minutes
         activity_end = activity_start + (step.duration_minutes or 60)
         new_steps.append(PlanStep(
@@ -143,7 +157,7 @@ def calculate_transit_for_plan(plan: WeekendPlan, is_family: bool = False) -> We
             type=step.type,
             title=step.title,
             description=step.description,
-            time_range=f"{hours(activity_start)}:{mins(activity_start)}-{hours(activity_end)}:{mins(activity_end)}",
+            time_range=f"{_fmt_h(current_minutes)}:{_fmt_m(activity_start)}-{_fmt_h(activity_end)}:{_fmt_m(activity_end)}",
             duration_minutes=step.duration_minutes or 60,
             location=step.location,
             booking_status=step.booking_status,
@@ -152,20 +166,18 @@ def calculate_transit_for_plan(plan: WeekendPlan, is_family: bool = False) -> We
         ))
         current_minutes = activity_end
 
-        # 插入交通步骤
         if idx < len(transit_data):
             transit = transit_data[idx]
             transit_minutes = transit["duration"] // 60
             transit_start = current_minutes
             transit_end = transit_start + transit_minutes
-            # 提取公交/地铁线路信息
             line_info = transit.get("line_info", "")
             new_steps.append(PlanStep(
                 step_id=f"transit-{idx}",
                 type="transport",
                 title="🚶 步行前往" if transit.get("is_walking") else ("🚇 公共交通前往" if not is_family else "🚗 自驾前往"),
                 description=f"预计{transit_minutes}分钟{line_info}",
-                time_range=f"{hours(transit_start)}:{mins(transit_start)}-{hours(transit_end)}:{mins(transit_end)}",
+                time_range=f"{_fmt_h(transit_start)}:{_fmt_m(transit_start)}-{_fmt_h(transit_end)}:{_fmt_m(transit_end)}",
                 duration_minutes=transit_minutes,
                 location=None,
                 booking_status="pending",
@@ -186,57 +198,97 @@ def calculate_transit_for_plan(plan: WeekendPlan, is_family: bool = False) -> We
     )
 
 
-def hours(total_mins: int) -> str:
+def _fmt_h(total_mins: int) -> str:
     return str((total_mins // 60) % 24).zfill(2)
 
 
-def mins(total_mins: int) -> str:
+def _fmt_m(total_mins: int) -> str:
     return str(total_mins % 60).zfill(2)
+
+
+def _parse_scenario(query: str, city: str) -> ScenarioContext:
+    """解析用户输入为场景"""
+    from ...services.llm_service import get_llm
+    try:
+        llm = get_llm()
+        result = llm.parse_query(query, city)
+        party_size = result.get("party_size") or result.get("people") or 3
+        return ScenarioContext(
+            date=result.get("date", ""),
+            departure_time=result.get("departure_time", ""),
+            scenario_type=result.get("scenario", result.get("scenario_type", "family")),
+            constraints=result.get("constraints", []),
+            participants=[str(party_size)],
+            duration_hours=4.0,
+            budget=result.get("budget_per_person") or result.get("budget") or ""
+        )
+    except:
+        return ScenarioContext(scenario_type="family", constraints=[], participants=["3"], duration_hours=4.0)
 
 
 @router.post("/plan", response_model=DualPlanResponse)
 async def create_plan(request: PlanRequest):
-    """生成周末规划方案（室内版 + 室外版），内置通勤计算"""
+    """
+    生成周末规划方案（新架构）。
+    走 7 层流水线：
+    1. 解析 @mentions → 读取偏好 & 约束
+    2. POI 召回（高德）
+    3. Tagging（一次 LLM）
+    4. Ranking（纯代码）
+    5. Planner（纯代码拼时间轴）
+    6. Validator（天气/排队/约束修正）
+    7. 通勤计算
+    """
     try:
-        agent = get_agent()
-        result = agent.generate_dual_plan(request)
+        # 1. 解析 @mentions
+        mentions = _parse_mentions(request.query)
+        prefs_list, constraints_list = _get_user_configs(mentions)
 
-        indoor = result.get("indoor")
-        outdoor = result.get("outdoor")
+        # 2. 解析场景
+        scenario = _parse_scenario(request.query, request.city)
 
-        # 计算通勤并插入交通步骤
-        if indoor:
-            is_family = indoor.scenario.scenario_type == "family"
-            indoor = calculate_transit_for_plan(indoor, is_family)
-            print(f"[规划] 室内方案计算通勤完成，共 {len(indoor.steps)} 个步骤")
+        # 3. Tagging → Ranking → 拼时间轴（走 MultiPersonPlanner）
+        planner = get_agent()
+        if len(prefs_list) > 1:
+            plan = planner.plan_multi(scenario, prefs_list, constraints_list)
+        else:
+            plan = planner.plan(scenario, prefs_list[0], constraints_list[0])
 
-        if outdoor:
-            is_family = outdoor.scenario.scenario_type == "family"
-            outdoor = calculate_transit_for_plan(outdoor, is_family)
-            print(f"[规划] 室外方案计算通勤完成，共 {len(outdoor.steps)} 个步骤")
+        # 4. Validator 修正
+        validator = get_validator()
+        plan = validator.validate_and_fix(plan, request.weather, scenario.constraints)
+
+        # 5. 计算通勤
+        is_family = plan.scenario.scenario_type == "family"
+        plan = calculate_transit_for_plan(plan, is_family)
+
+        print(f"[规划] 完成，共 {len(plan.steps)} 个步骤，得分 top POI: {[s.title for s in plan.steps if s.type != 'transport'][:3]}")
 
         return DualPlanResponse(
-            success=result["success"],
-            message=result["message"],
-            indoor=indoor,
-            outdoor=outdoor,
-            weather_alert=result.get("weather_alert")
+            success=True,
+            message=f"已为 {len(mentions)} 位用户生成方案",
+            indoor=plan,
+            outdoor=None,
+            weather_alert=None
         )
+
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @router.post("/parse", response_model=dict)
 async def parse_query(request: dict):
-    """用 LLM 解析用户输入，提取场景信息"""
+    """解析用户输入，提取场景信息"""
     try:
         query = request.get("query", "")
         city = request.get("city", "上海")
-        
-        # 直接调 LLMService，不走 agent 中间层
+
         from ...services.llm_service import get_llm
         llm = get_llm()
         parsed = llm.parse_query(query, city)
-        
+
         return {
             "success": True,
             "data": {
@@ -258,10 +310,11 @@ async def parse_query(request: dict):
                 "budget_per_person": None, "constraints": []
             }
         }
-        
+
+
 @router.post("/transit-time")
 async def get_transit_time(request: dict):
-    """根据起终点坐标查询公共交通时间（秒）"""
+    """根据起终点坐标查公共交通时间"""
     import os, requests
     origin = request.get("origin", "")
     destination = request.get("destination", "")
@@ -287,10 +340,12 @@ async def get_transit_time(request: dict):
         return {"success": False, "duration": None, "distance": 0, "error": str(e)}
     return {"success": False, "duration": None, "distance": 0}
 
+
 @router.post("/execute", response_model=ExecuteResponse)
 async def execute_plan(request: ExecuteRequest):
     """执行规划方案"""
     return ExecuteResponse(success=True, message="执行成功", confirmed_steps=[], failed_steps=[])
+
 
 @router.post("/export-pdf")
 async def export_pdf(request: dict):

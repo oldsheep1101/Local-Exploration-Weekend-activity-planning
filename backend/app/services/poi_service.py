@@ -92,23 +92,53 @@ def build_poi_context(pois: List[POIInfo]) -> str:
     return "\n可选地点:\n" + "\n".join(lines)
 
 
-# 根据场景类型返回 POI 搜索关键词
-SCENARIO_KEYWORDS = {
-    "family": ["亲子乐园", "儿童游乐场", "博物馆", "科技馆", "室内游乐场", "海洋馆", "动物园"],
-    "friends": ["密室逃脱", "剧本杀", "KTV", "桌游吧", "咖啡厅", "商场", "美食街"],
-    "couple": ["约会餐厅", "电影院", "展览", "公园", "酒吧", "艺术馆", "SPA"],
-    "solo": ["书店", "咖啡厅", "展览", "博物馆", "健身房", "公园", "个人护理"],
-    "casual": ["公园", "商场", "美食", "娱乐", "书店", "咖啡厅"]
+# POI 类型池定义
+POOL_KEYWORDS = {
+    "activity": {
+        "family": ["亲子乐园", "儿童游乐场", "博物馆", "科技馆", "室内游乐场", "海洋馆", "动物园"],
+        "friends": ["密室逃脱", "剧本杀", "KTV", "桌游吧", "咖啡厅", "商场", "艺术展"],
+        "couple": ["电影院", "展览", "公园", "艺术馆", "SPA", "游乐场"],
+        "solo": ["书店", "展览", "博物馆", "健身房", "公园"],
+        "casual": ["公园", "商场", "娱乐", "书店", "咖啡厅", "艺术展"]
+    },
+    "food": {
+        "family": ["亲子餐厅", "儿童餐厅", "商场餐厅", "连锁餐厅"],
+        "friends": ["餐厅", "火锅", "烧烤", "聚餐", "网红餐厅", "美食街"],
+        "couple": ["约会餐厅", "西餐", "日料", "景观餐厅", "甜品店"],
+        "solo": ["咖啡厅", "轻食", "日料", "甜品店", "面馆"],
+        "casual": ["餐厅", "咖啡厅", "美食", "商场餐厅"]
+    },
+    "optional": {
+        "family": ["公园", "滨江步道", "动物园"],
+        "friends": ["酒吧", "清吧", "咖啡厅", "棋牌"],
+        "couple": ["酒吧", "清吧", "茶馆", "电影院"],
+        "solo": ["书店", "画展", "茶馆", "咖啡厅"],
+        "casual": ["公园", "咖啡厅", "书店", "展览"]
+    }
 }
 
-# 活动类型关键词
-ACTIVITY_KEYWORDS = {
-    "family": ["亲子", "儿童", "家庭", "溜娃"],
-    "friends": ["朋友", "聚会", "社交", "娱乐"],
-    "couple": ["情侣", "约会", "浪漫", "二人世界"],
-    "solo": ["独自", "一个人", "放松"],
-    "casual": []
-}
+
+def search_poi_pool(scenario_type: str, pool: str, city: str = "上海", limit: int = 5) -> List[POIInfo]:
+    """搜索指定 pool 的 POI"""
+    keywords = POOL_KEYWORDS.get(pool, POOL_KEYWORDS.get("activity", {})).get(scenario_type, [])
+    results = []
+    for kw in keywords[:3]:
+        pois = search_poi(kw, city=city, limit=limit)
+        results.extend(pois)
+    return results
+
+
+def search_multi_pool(scenario: ScenarioContext, city: str = "上海") -> Dict[str, List[POIInfo]]:
+    """
+    分池召回：activity / food / optional
+    返回结构化 POI 池
+    """
+    scenario_type = scenario.scenario_type or "casual"
+    return {
+        "activity": search_poi_pool(scenario_type, "activity", city=city, limit=5),
+        "food": search_poi_pool(scenario_type, "food", city=city, limit=5),
+        "optional": search_poi_pool(scenario_type, "optional", city=city, limit=3),
+    }
 
 
 def search_pois_for_scenario(scenario: ScenarioContext, city: str = "上海") -> Dict[str, List[POIInfo]]:
